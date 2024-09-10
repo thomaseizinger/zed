@@ -80,7 +80,8 @@ pub struct ProjectPanel {
     width: Option<Pixels>,
     pending_serialization: Task<Option<()>>,
     show_scrollbar: bool,
-    scrollbar_drag_thumb_offset: Rc<Cell<Option<f32>>>,
+    vertical_scrollbar_drag_thumb_offset: Rc<Cell<Option<f32>>>,
+    horizontal_scrollbar_drag_thumb_offset: Rc<Cell<Option<f32>>>,
     hide_scrollbar_task: Option<Task<()>>,
     max_width_item_index: usize,
 }
@@ -311,7 +312,8 @@ impl ProjectPanel {
                 pending_serialization: Task::ready(None),
                 show_scrollbar: !Self::should_autohide_scrollbar(cx),
                 hide_scrollbar_task: None,
-                scrollbar_drag_thumb_offset: Default::default(),
+                vertical_scrollbar_drag_thumb_offset: Default::default(),
+                horizontal_scrollbar_drag_thumb_offset: Default::default(),
                 max_width_item_index: 0,
             };
             this.update_visible_entries(None, cx);
@@ -1269,6 +1271,7 @@ impl ProjectPanel {
 
     fn autoscroll(&mut self, cx: &mut ViewContext<Self>) {
         if let Some((_, _, index)) = self.selection.and_then(|s| self.index_for_selection(s)) {
+            dbg!("Autoscroll");
             self.scroll_handle.scroll_to_item(index);
             cx.notify();
         }
@@ -1864,6 +1867,7 @@ impl ProjectPanel {
                     (depth, path)
                 };
                 let estimated_width = Self::item_width(depth, &path, entry.is_symlink);
+
                 match max_width_item.as_mut() {
                     Some((id, worktree_id, width)) => {
                         if *width < estimated_width {
@@ -2567,7 +2571,9 @@ impl ProjectPanel {
 
         let height = scroll_handle
             .last_item_size
-            .filter(|_| self.show_scrollbar || self.scrollbar_drag_thumb_offset.get().is_some())?
+            .filter(|_| {
+                self.show_scrollbar || self.vertical_scrollbar_drag_thumb_offset.get().is_some()
+            })?
             .height;
 
         let total_list_length = height.0 as f64 * items_count as f64;
@@ -2607,7 +2613,7 @@ impl ProjectPanel {
                 .on_mouse_up(
                     MouseButton::Left,
                     cx.listener(|this, _, cx| {
-                        if this.scrollbar_drag_thumb_offset.get().is_none()
+                        if this.vertical_scrollbar_drag_thumb_offset.get().is_none()
                             && !this.focus_handle.contains_focused(cx)
                         {
                             this.hide_scrollbar(cx);
@@ -2630,7 +2636,7 @@ impl ProjectPanel {
                 .child(ProjectPanelScrollbar::vertical(
                     percentage as f32..end_offset as f32,
                     self.scroll_handle.clone(),
-                    self.scrollbar_drag_thumb_offset.clone(),
+                    self.vertical_scrollbar_drag_thumb_offset.clone(),
                     cx.view().entity_id(),
                     items_count,
                 )),
@@ -2639,14 +2645,15 @@ impl ProjectPanel {
 
     fn render_horizontal_scrollbar(&self, cx: &mut ViewContext<Self>) -> Option<Stateful<Div>> {
         let settings = ProjectPanelSettings::get_global(cx);
-        let panel_width = self.width?;
         if settings.scrollbar.show == ShowScrollbar::Never {
             return None;
         }
         let scroll_handle = self.scroll_handle.0.borrow();
         let longest_item_width = scroll_handle
             .last_item_size
-            .filter(|_| self.show_scrollbar || self.scrollbar_drag_thumb_offset.get().is_some())?
+            .filter(|_| {
+                self.show_scrollbar || self.horizontal_scrollbar_drag_thumb_offset.get().is_some()
+            })?
             .width
             .0;
         let current_offset = scroll_handle.base_handle.offset().x.0.min(0.).abs();
@@ -2667,7 +2674,6 @@ impl ProjectPanel {
         if longest_item_width < scroll_handle.base_handle.bounds().size.width.0 {
             return None;
         }
-        dbg!(percentage..end_offset);
         let end_offset = end_offset.clamp(percentage + MINIMUM_SCROLLBAR_PERCENTAGE_HEIGHT, 1.);
         Some(
             div()
@@ -2686,7 +2692,7 @@ impl ProjectPanel {
                 .on_mouse_up(
                     MouseButton::Left,
                     cx.listener(|this, _, cx| {
-                        if this.scrollbar_drag_thumb_offset.get().is_none()
+                        if this.horizontal_scrollbar_drag_thumb_offset.get().is_none()
                             && !this.focus_handle.contains_focused(cx)
                         {
                             this.hide_scrollbar(cx);
@@ -2710,7 +2716,7 @@ impl ProjectPanel {
                     ProjectPanelScrollbar::horizontal(
                         percentage as f32..end_offset as f32,
                         self.scroll_handle.clone(),
-                        self.scrollbar_drag_thumb_offset.clone(),
+                        self.horizontal_scrollbar_drag_thumb_offset.clone(),
                         cx.view().entity_id(),
                         width,
                     )

@@ -143,6 +143,7 @@ impl gpui::Element for ProjectPanelScrollbar {
                 let is_dragging = self.scrollbar_drag_state.clone();
                 move |event: &MouseDownEvent, phase, _cx| {
                     if phase.bubble() && bounds.contains(&event.position) {
+                        dbg!("mouse down event");
                         if !thumb_bounds.contains(&event.position) {
                             let scroll = scroll.0.borrow();
                             if let Some(Size {
@@ -163,6 +164,8 @@ impl gpui::Element for ProjectPanelScrollbar {
                                     (event.position.y - bounds.origin.y) / bounds.size.height;
 
                                 let percentage = percentage.min(1. - thumb_percentage_size);
+
+                                dbg!("??");
                                 scroll
                                     .base_handle
                                     .set_offset(point(px(0.), px(-max_offset * percentage)));
@@ -179,11 +182,13 @@ impl gpui::Element for ProjectPanelScrollbar {
                 let scroll = self.scroll.clone();
                 move |event: &ScrollWheelEvent, phase, cx| {
                     if phase.bubble() && bounds.contains(&event.position) {
+                        dbg!("ScrollWheelEvent");
                         let scroll = scroll.0.borrow_mut();
                         let current_offset = scroll.base_handle.offset();
-                        scroll
-                            .base_handle
-                            .set_offset(current_offset + event.delta.pixel_delta(cx.line_height()));
+
+                        scroll.base_handle.set_offset(
+                            dbg!(current_offset) + dbg!(event.delta.pixel_delta(cx.line_height())),
+                        );
                     }
                 }
             });
@@ -192,25 +197,38 @@ impl gpui::Element for ProjectPanelScrollbar {
             let kind = self.kind;
             cx.on_mouse_event(move |event: &MouseMoveEvent, _, cx| {
                 if let Some(drag_state) = drag_state.get().filter(|_| event.dragging()) {
+                    dbg!("MouseMoveEvent");
                     let scroll = scroll.0.borrow();
                     if let Some(Size {
                         height: last_height,
-                        ..
+                        width: last_width,
                     }) = scroll.last_item_size
                     {
-                        let max_offset = match kind {
-                            ScrollbarKind::Horizontal { viewport_width } => viewport_width,
+                        match kind {
+                            ScrollbarKind::Horizontal { .. } => {
+                                let max_offset = last_width;
+                                let percentage = (event.position.x - bounds.origin.x)
+                                    / bounds.size.width
+                                    - drag_state;
+
+                                let percentage = percentage.min(1. - thumb_percentage_size);
+                                scroll
+                                    .base_handle
+                                    .set_offset(point(-max_offset * percentage, px(0.)));
+                            }
                             ScrollbarKind::Vertical { item_count } => {
-                                item_count as f32 * last_height
+                                let max_offset = item_count as f32 * last_height;
+                                let percentage = (event.position.y - bounds.origin.y)
+                                    / bounds.size.height
+                                    - drag_state;
+
+                                let percentage = percentage.min(1. - thumb_percentage_size);
+                                scroll
+                                    .base_handle
+                                    .set_offset(point(px(0.), -max_offset * percentage));
                             }
                         };
-                        let percentage =
-                            (event.position.y - bounds.origin.y) / bounds.size.height - drag_state;
 
-                        let percentage = percentage.min(1. - thumb_percentage_size);
-                        scroll
-                            .base_handle
-                            .set_offset(point(px(0.), -max_offset * percentage));
                         cx.notify(view_id);
                     }
                 } else {
@@ -220,6 +238,7 @@ impl gpui::Element for ProjectPanelScrollbar {
             let is_dragging = self.scrollbar_drag_state.clone();
             cx.on_mouse_event(move |_event: &MouseUpEvent, phase, cx| {
                 if phase.bubble() {
+                    dbg!("MouseUpEvent");
                     is_dragging.set(None);
                     cx.notify(view_id);
                 }

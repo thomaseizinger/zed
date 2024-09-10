@@ -229,17 +229,26 @@ impl Element for UniformList {
                 if self.item_count > 0 {
                     let content_height =
                         item_height * self.item_count + padding.top + padding.bottom;
-                    let min_scroll_offset = padded_bounds.size.height - content_height;
-                    let is_scrolled = scroll_offset.y != px(0.);
+                    let is_scrolled_vertically = scroll_offset.y != px(0.);
+                    let min_vertical_scroll_offset = padded_bounds.size.height - content_height;
+                    if is_scrolled_vertically && scroll_offset.y < min_vertical_scroll_offset {
+                        shared_scroll_offset.borrow_mut().y = min_vertical_scroll_offset;
+                        scroll_offset.y = min_vertical_scroll_offset;
+                    }
 
-                    if is_scrolled && scroll_offset.y < min_scroll_offset {
-                        shared_scroll_offset.borrow_mut().y = min_scroll_offset;
-                        scroll_offset.y = min_scroll_offset;
+                    let content_width = measurement.width + padding.left + padding.right;
+                    let min_horizontal_scroll_offset = padded_bounds.size.width - content_width;
+                    let is_scrolled_horizontally = scroll_offset.x != px(0.);
+                    if is_scrolled_horizontally && scroll_offset.x < min_horizontal_scroll_offset {
+                        shared_scroll_offset.borrow_mut().x = min_horizontal_scroll_offset;
+
+                        scroll_offset.x = min_horizontal_scroll_offset;
                     }
 
                     if let Some(ix) = shared_scroll_to_item {
                         let list_height = padded_bounds.size.height;
                         let mut updated_scroll_offset = shared_scroll_offset.borrow_mut();
+                        dbg!(&updated_scroll_offset);
                         let item_top = item_height * ix + padding.top;
                         let item_bottom = item_top + item_height;
                         let scroll_top = -updated_scroll_offset.y;
@@ -265,7 +274,7 @@ impl Element for UniformList {
                         for (mut item, ix) in items.into_iter().zip(visible_range) {
                             let item_origin = padded_bounds.origin
                                 + point(
-                                    scroll_offset.x + px(0.),
+                                    scroll_offset.x + padding.left,
                                     item_height * ix + scroll_offset.y + padding.top,
                                 );
                             let available_space = size(
