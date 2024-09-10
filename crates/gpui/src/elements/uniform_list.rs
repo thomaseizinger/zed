@@ -264,7 +264,10 @@ impl Element for UniformList {
                     cx.with_content_mask(Some(content_mask), |cx| {
                         for (mut item, ix) in items.into_iter().zip(visible_range) {
                             let item_origin = padded_bounds.origin
-                                + point(px(0.), item_height * ix + scroll_offset.y + padding.top);
+                                + point(
+                                    scroll_offset.x + px(0.),
+                                    item_height * ix + scroll_offset.y + padding.top,
+                                );
                             let available_space = size(
                                 AvailableSpace::Definite(padded_bounds.size.width),
                                 AvailableSpace::Definite(item_height),
