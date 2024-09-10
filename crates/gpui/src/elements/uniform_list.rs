@@ -87,7 +87,7 @@ pub struct UniformListScrollHandle(pub Rc<RefCell<UniformListScrollState>>);
 pub struct UniformListScrollState {
     pub base_handle: ScrollHandle,
     pub deferred_scroll_to_item: Option<usize>,
-    pub last_item_height: Option<Pixels>,
+    pub last_item_size: Option<Size<Pixels>>,
 }
 
 impl UniformListScrollHandle {
@@ -96,7 +96,7 @@ impl UniformListScrollHandle {
         Self(Rc::new(RefCell::new(UniformListScrollState {
             base_handle: ScrollHandle::new(),
             deferred_scroll_to_item: None,
-            last_item_height: None,
+            last_item_size: None,
         })))
     }
 
@@ -133,7 +133,7 @@ impl Element for UniformList {
         cx: &mut WindowContext,
     ) -> (LayoutId, Self::RequestLayoutState) {
         let max_items = self.item_count;
-        let item_size = self.measure_item(None, cx);
+        let item_size = self.measure_item(cx);
         let layout_id = self
             .interactivity
             .request_layout(global_id, cx, |style, cx| match self.sizing_behavior {
@@ -200,10 +200,11 @@ impl Element for UniformList {
 
         let shared_scroll_offset = self.interactivity.scroll_offset.clone().unwrap();
 
-        let item_height = self.measure_item(Some(padded_bounds.size.width), cx).height;
+        let measurement = self.measure_item(cx);
+        let item_height = measurement.height;
         let shared_scroll_to_item = self.scroll_handle.as_mut().and_then(|handle| {
             let mut handle = handle.0.borrow_mut();
-            handle.last_item_height = Some(item_height);
+            handle.last_item_size = Some(measurement);
             handle.deferred_scroll_to_item.take()
         });
 
@@ -318,7 +319,7 @@ impl UniformList {
         self
     }
 
-    fn measure_item(&self, list_width: Option<Pixels>, cx: &mut WindowContext) -> Size<Pixels> {
+    fn measure_item(&self, cx: &mut WindowContext) -> Size<Pixels> {
         if self.item_count == 0 {
             return Size::default();
         }
@@ -328,12 +329,7 @@ impl UniformList {
         let Some(mut item_to_measure) = items.pop() else {
             return Size::default();
         };
-        let available_space = size(
-            list_width.map_or(AvailableSpace::MinContent, |width| {
-                AvailableSpace::Definite(width)
-            }),
-            AvailableSpace::MinContent,
-        );
+        let available_space = size(AvailableSpace::MinContent, AvailableSpace::MinContent);
         item_to_measure.layout_as_root(available_space, cx)
     }
 

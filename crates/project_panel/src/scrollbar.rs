@@ -2,7 +2,7 @@ use std::{cell::Cell, ops::Range, rc::Rc};
 
 use gpui::{
     point, AnyView, Bounds, ContentMask, Hitbox, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ScrollWheelEvent, Style, UniformListScrollHandle,
+    ScrollWheelEvent, Size, Style, UniformListScrollHandle,
 };
 use ui::{prelude::*, px, relative, IntoElement};
 
@@ -103,7 +103,11 @@ impl gpui::Element for ProjectPanelScrollbar {
                     if phase.bubble() && bounds.contains(&event.position) {
                         if !thumb_bounds.contains(&event.position) {
                             let scroll = scroll.0.borrow();
-                            if let Some(last_height) = scroll.last_item_height {
+                            if let Some(Size {
+                                height: last_height,
+                                ..
+                            }) = scroll.last_item_size
+                            {
                                 let max_offset = item_count as f32 * last_height;
                                 let percentage =
                                     (event.position.y - bounds.origin.y) / bounds.size.height;
@@ -138,7 +142,11 @@ impl gpui::Element for ProjectPanelScrollbar {
             cx.on_mouse_event(move |event: &MouseMoveEvent, _, cx| {
                 if let Some(drag_state) = drag_state.get().filter(|_| event.dragging()) {
                     let scroll = scroll.0.borrow();
-                    if let Some(last_height) = scroll.last_item_height {
+                    if let Some(Size {
+                        height: last_height,
+                        ..
+                    }) = scroll.last_item_size
+                    {
                         let max_offset = item_count as f32 * last_height;
                         let percentage =
                             (event.position.y - bounds.origin.y) / bounds.size.height - drag_state;

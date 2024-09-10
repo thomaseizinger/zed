@@ -82,6 +82,7 @@ pub struct ProjectPanel {
     show_scrollbar: bool,
     scrollbar_drag_thumb_offset: Rc<Cell<Option<f32>>>,
     hide_scrollbar_task: Option<Task<()>>,
+    max_width_item_index: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -311,6 +312,7 @@ impl ProjectPanel {
                 show_scrollbar: !Self::should_autohide_scrollbar(cx),
                 hide_scrollbar_task: None,
                 scrollbar_drag_thumb_offset: Default::default(),
+                max_width_item_index: 0,
             };
             this.update_visible_entries(None, cx);
 
@@ -1738,6 +1740,7 @@ impl ProjectPanel {
 
         let old_ancestors = std::mem::take(&mut self.ancestors);
         self.visible_entries.clear();
+        let mut max_width_item = None;
         for worktree in project.visible_worktrees(cx) {
             let snapshot = worktree.read(cx).snapshot();
             let worktree_id = snapshot.id();
@@ -1824,6 +1827,57 @@ impl ProjectPanel {
                         is_fifo: entry.is_fifo,
                     });
                 }
+                let worktree_abs_path = worktree.read(cx).abs_path();
+                let (depth, path) = if entry.is_file() {
+                    let depth = entry.path.ancestors().count() - 1;
+                    let path = Arc::from(Path::new(entry.path.file_name().unwrap()));
+                    (depth, path)
+                } else if Some(entry) == worktree.read(cx).root_entry() {
+                    let path = Arc::from(Path::new(worktree_abs_path.file_name().unwrap()));
+                    let depth = 0;
+                    (depth, path)
+                } else {
+                    let path = self
+                        .ancestors
+                        .get(&entry.id)
+                        .and_then(|ancestors| {
+                            let outermost_ancestor = ancestors.ancestors.last()?;
+                            let root_folded_entry = worktree
+                                .read(cx)
+                                .entry_for_id(*outermost_ancestor)?
+                                .path
+                                .as_ref();
+                            entry
+                                .path
+                                .strip_prefix(root_folded_entry)
+                                .ok()
+                                .and_then(|suffix| {
+                                    let full_path = Path::new(root_folded_entry.file_name()?);
+                                    Some(Arc::<Path>::from(full_path.join(suffix)))
+                                })
+                        })
+                        .unwrap_or_else(|| entry.path.clone());
+                    let depth = path
+                        .strip_prefix(worktree_abs_path)
+                        .map(|suffix| suffix.components().count())
+                        .unwrap_or_default();
+                    (depth, path)
+                };
+                let estimated_width = Self::item_width(depth, &path, entry.is_symlink);
+                dbg!(&path, &estimated_width, depth);
+                match max_width_item.as_mut() {
+                    Some((id, worktree_id, width)) => {
+                        if *width < estimated_width {
+                            *id = entry.id;
+                            *worktree_id = worktree.read(cx).id();
+                            *width = estimated_width;
+                        }
+                    }
+                    None => {
+                        max_width_item = Some((entry.id, worktree.read(cx).id(), estimated_width))
+                    }
+                }
+
                 if expanded_dir_ids.binary_search(&entry.id).is_err()
                     && entry_iter.advance_to_sibling()
                 {
@@ -1838,6 +1892,22 @@ impl ProjectPanel {
                 .push((worktree_id, visible_worktree_entries, OnceCell::new()));
         }
 
+        if let Some((project_entry_id, worktree_id, _)) = dbg!(max_width_item) {
+            let mut visited_worktrees_length = 0;
+            let index = self.visible_entries.iter().find_map(|(id, entries, _)| {
+                if worktree_id == *id {
+                    entries
+                        .iter()
+                        .position(|entry| entry.id == project_entry_id)
+                } else {
+                    visited_worktrees_length += entries.len();
+                    None
+                }
+            });
+            if let Some(index) = index {
+                self.max_width_item_index = visited_worktrees_length + index;
+            }
+        }
         if let Some((worktree_id, entry_id)) = new_selected_entry {
             self.selection = Some(SelectedEntry {
                 worktree_id,
@@ -2497,8 +2567,9 @@ impl ProjectPanel {
         let scroll_handle = self.scroll_handle.0.borrow();
 
         let height = scroll_handle
-            .last_item_height
-            .filter(|_| self.show_scrollbar || self.scrollbar_drag_thumb_offset.get().is_some())?;
+            .last_item_size
+            .filter(|_| self.show_scrollbar || self.scrollbar_drag_thumb_offset.get().is_some())?
+            .height;
 
         let total_list_length = height.0 as f64 * items_count as f64;
         let current_offset = scroll_handle.base_handle.offset().y.0.min(0.).abs() as f64;
@@ -2630,6 +2701,15 @@ impl ProjectPanel {
             cx.notify();
         }
     }
+
+    fn item_width(depth: usize, entry: &Path, is_symlink: bool) -> usize {
+        const ICON_SIZE_FACTOR: usize = 2;
+        let mut item_width = depth * ICON_SIZE_FACTOR + entry.to_string_lossy().chars().count();
+        if is_symlink {
+            item_width += ICON_SIZE_FACTOR;
+        }
+        item_width
+    }
 }
 
 impl Render for ProjectPanel {
@@ -2736,6 +2816,7 @@ impl Render for ProjectPanel {
                     })
                     .size_full()
                     .with_sizing_behavior(ListSizingBehavior::Infer)
+                    .with_width_from_item(Some(dbg!(self.max_width_item_index)))
                     .track_scroll(self.scroll_handle.clone()),
                 )
                 .children(self.render_scrollbar(items_count, cx))
